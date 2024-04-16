@@ -4,6 +4,9 @@ You can also see this document on [HackMD](https://hackmd.io/@Cr1xxty1RMCCkPcMXY
 - [How to use this LKM](#How-to-use-this-LKM)
 - [Reference](#Reference)
 
+
+I hope that this information will help. If you need any further information, please feel free to contact me via email r12944038@csie.ntu.edu.tw. 
+
 ## Intro Rootkit
 About Environment:
 > Both the rookit and the test program run on an AArch64 machine.
@@ -13,10 +16,10 @@ Rootkit as you might have heard before, is essentially the malware that runs in 
 
 LKM runs in kernel mode and allows access to all kernel internal structures/functions. It can be used to extend the functionality of the running kernel, and thus it is also often used to implement device drivers to support new hardware.
 
-It's a simple rootkit and provide the following functions: 
-(1) hide/unhide module
-(2) masquerade process name
-(3) hook/unhook syscall 
+It's a simple rootkit and provide the following functions:
+1. hide/unhide module
+2. masquerade process name
+3. hook/unhook syscall 
 
 ## Explanation
 After entering rootkit_init, first obtain the sys_call_table, and then save the address of the syscall table that will be replaced by the hook later.
