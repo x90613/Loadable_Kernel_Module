@@ -1,0 +1,14 @@
+# Ignore compiled output and object files
+*.o
+*.ko
+*.cmd
+*.mod
+*.mod.*
+modules.order
+Module.symvers
+
+# Ignore user-space executable files
+userTest
+hsuckd
+MIT
+NTUST

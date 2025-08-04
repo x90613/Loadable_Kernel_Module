@@ -254,7 +254,8 @@ sudo make modules_install
 make
 sudo insmod rootkit.ko
 dmesg | tail
-# the following command based on the major number for your device number
+# the following command based on the major number for your device number, for example:
+# [  967.511465] The major number for your device is 510
 sudo mknod /dev/rootkit c xxx 0
 ```
 ### Generate files for testing
@@ -323,7 +324,7 @@ sudo systemctl --force --force reboot
 # find the pid of your program
 ps aux | grep hsuckd
 # send SIGKILL to it
-kill -9 pid
+kill -9 [pid of hsuckd]
 # after sent SIGKILL, the program is still alive
 ps aux | grep hsuckd
 
