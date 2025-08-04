@@ -1,4 +1,5 @@
 # Rootkit - Loadable Kernel Module
+You can also see this document on [HackMD](https://hackmd.io/@Cr1xxty1RMCCkPcMXYPWeg/rootkit).
 - [Intro_Rootkit](#Intro-Rootkit)
 - [Explanation](#Explanation)
 - [How to use this LKM](#How-to-use-this-LKM)
