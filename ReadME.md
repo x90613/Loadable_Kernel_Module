@@ -351,10 +351,10 @@ ls
 ```
 
 ## Reference
-[Linux Rootkit 學習資源筆記](https://hackercat.org/linux/linux-rootkit-resource "Linux Rootkit 學習資源筆記")
-[Linux LKM Rootkit Tutorial | Linux Kernel Module Rootkit](https://www.youtube.com/watch?v=hsk450he7nI "Linux LKM Rootkit Tutorial | Linux Kernel Module Rootkit")
-[Linux Rootkit系列](https://cloud.tencent.com/developer/article/1036559 "Linux Rootkit系列")
-[TheXcellerator Linux Rootkits](https://xcellerator.github.io/tags/rootkit/ "TheXcellerator Linux Rootkits")
-[Hiding Kernel Modules](https://github.com/xcellerator/linux_kernel_hacking/tree/master/3_RootkitTechniques/3.0_hiding_lkm)
-[linux_kernel_hacking](https://github.com/xcellerator/linux_kernel_hacking/tree/master)
-[Diamorphine](https://github.com/m0nad/Diamorphine/tree/master)
+- [Linux Rootkit 學習資源筆記](https://hackercat.org/linux/linux-rootkit-resource "Linux Rootkit 學習資源筆記")
+- [Linux LKM Rootkit Tutorial | Linux Kernel Module Rootkit](https://www.youtube.com/watch?v=hsk450he7nI "Linux LKM Rootkit Tutorial | Linux Kernel Module Rootkit")
+- [Linux Rootkit系列](https://cloud.tencent.com/developer/article/1036559 "Linux Rootkit系列")
+- [TheXcellerator Linux Rootkits](https://xcellerator.github.io/tags/rootkit/ "TheXcellerator Linux Rootkits")
+- [Hiding Kernel Modules](https://github.com/xcellerator/linux_kernel_hacking/tree/master/3_RootkitTechniques/3.0_hiding_lkm)
+- [linux_kernel_hacking](https://github.com/xcellerator/linux_kernel_hacking/tree/master)
+- [Diamorphine](https://github.com/m0nad/Diamorphine/tree/master)
