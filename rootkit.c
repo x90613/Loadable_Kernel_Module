@@ -304,11 +304,12 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl, unsigned long a
 	return ret;
 }
 
+/* File operations structure */
 struct file_operations fops = {
-	open: rootkit_open,
-	unlocked_ioctl: rootkit_ioctl,
-	release: rootkit_release,
-	owner: THIS_MODULE
+	.open = rootkit_open,
+	.unlocked_ioctl = rootkit_ioctl,
+	.release = rootkit_release,
+	.owner = THIS_MODULE,
 };
 
 static int __init rootkit_init(void)
@@ -321,7 +322,7 @@ static int __init rootkit_init(void)
 	kernel_cdev->ops = &fops;
 	kernel_cdev->owner = THIS_MODULE;
 
-	/* Allocate a character device region */
+	/* Dynamically allocate a character device region */
 	ret = alloc_chrdev_region(&dev_no, 0, 1, "rootkit");
 	if (ret < 0) {
 		pr_info("major number allocation failed\n");
@@ -331,8 +332,8 @@ static int __init rootkit_init(void)
 	major = MAJOR(dev_no);
 	dev = MKDEV(major, 0);
 	printk("The major number for your device is %d\n", major);
-	
-	/* Add a char device to the kernel VFS*/
+
+	/* Register a device structure with the kernel VFS*/
 	ret = cdev_add(kernel_cdev, dev, 1);
 	if (ret < 0) {
 		pr_info(KERN_INFO "unable to allocate cdev");
