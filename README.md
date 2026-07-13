@@ -1,7 +1,6 @@
 # Linux Rootkit — Loadable Kernel Module
 
-> **Environment:** AArch64 (ARM64), Linux mainline v5.15  
-> Cross-compiled on macOS Apple Silicon and loaded into a QEMU VM.
+> **Environment:** AArch64 (ARM64), Linux mainline v5.15
 
 A research rootkit implemented as a Linux Loadable Kernel Module (LKM). LKMs run in kernel mode with full access to kernel internals — the same mechanism used by device drivers, but here used to hook syscalls and hide activity from userspace.
 
@@ -50,14 +49,14 @@ You need an AArch64 Linux environment running kernel v5.15. If you don't have on
 make
 
 # Load it
-sudo insmod rootkit.ko
+sudo insmod loadable_kernel_module.ko
 
 # Check the major number assigned to the character device
 dmesg | tail
 # e.g. "The major number for your device is 510"
 
 # Create the device node (replace 510 with your actual major number)
-sudo mknod /dev/rootkit c 510 0
+sudo mknod /dev/loadable_kernel_module c 510 0
 
 # Build the userspace test programs
 make generateTestFile
@@ -69,7 +68,7 @@ The test programs (`userTest`, `NTUST`, `MIT`, `hsuckd`) are compiled from `test
 
 ## Usage
 
-All commands go through the `/dev/rootkit` character device via `ioctl`.  
+All commands go through the `/dev/loadable_kernel_module` character device via `ioctl`.  
 `userTest <n>` sends the corresponding IOCTL command.
 
 ### Hide / Unhide Module
@@ -77,13 +76,13 @@ All commands go through the `/dev/rootkit` character device via `ioctl`.
 Toggles the module's presence in `lsmod`. Calling it a second time makes the module reappear.
 
 ```bash
-lsmod | grep rootkit        # visible
+lsmod | grep loadable_kernel_module        # visible
 
 sudo ./userTest 0           # hide
-lsmod | grep rootkit        # gone
+lsmod | grep loadable_kernel_module        # gone
 
 sudo ./userTest 0           # unhide
-lsmod | grep rootkit        # back
+lsmod | grep loadable_kernel_module        # back
 ```
 
 ### Masquerade Process Names
@@ -234,7 +233,7 @@ int change_process_name(const char *orig_name, const char *new_name)
 }
 ```
 
-The caller in `rootkit_ioctl` skips any rename where `strlen(new_name) >= strlen(orig_name)` to prevent overflowing the fixed-size field.
+The caller in `lkm_ioctl` skips any rename where `strlen(new_name) >= strlen(orig_name)` to prevent overflowing the fixed-size field.
 
 ### Hooked Syscalls
 

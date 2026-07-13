@@ -1,4 +1,4 @@
-obj-m = rootkit.o
+obj-m = loadable_kernel_module.o
 PWD := $(shell pwd)
 KDIR := /lib/modules/$(shell uname -r)/build
 EXTRA_CFLAGS = -Wall -g

@@ -250,18 +250,6 @@ To mount it automatically on every boot, add this line to `/etc/fstab` inside th
 ```
 hostshare  /mnt/host  9p  trans=virtio,version=9p2000.L,rw  0  0
 ```
-
-**Typical workflow:** drop your compiled `.ko` file into `~/arm-vm/shared` on the host, then load it directly inside the VM without `scp`:
-
-```bash
-# on the host
-cp ~/arm-vm/mymodule/mymodule.ko ~/arm-vm/shared/
-
-# inside the VM
-insmod /mnt/host/mymodule.ko
-dmesg | tail
-```
-
 ---
 
 ## Step 6 — Configure the VM Environment
@@ -431,6 +419,17 @@ dmesg | tail            # should now show "mymodule: unloaded"
 **SSH connection refused:**
 - Make sure you ran `systemctl start ssh` inside the VM
 - Confirm the VM is still running (check the QEMU serial console terminal)
+
+**No network / `dhclient` fails:**
+
+The network interface may not have come up automatically. Bring it up manually first:
+
+```bash
+ip link set enp0s1 up
+dhclient enp0s1
+```
+
+Then verify with `ip addr show enp0s1` — you should see an assigned IP. If the interface name differs on your VM, run `ip link` to list all interfaces.
 
 **`dmesg` shows nothing after `insmod`:**
 - Try `dmesg -w` to watch live, then run `insmod` in another terminal

