@@ -49,7 +49,7 @@ We use Docker to get a stable Linux cross-compilation environment with the right
 Create `Dockerfile.builder` in `~/arm-vm/`:
 
 ```dockerfile
-FROM ubuntu:22.04
+FROM ubuntu:20.04
 
 RUN apt-get update && apt-get install -y \
     gcc bc bison flex libssl-dev \
@@ -99,18 +99,22 @@ make ARCH=arm64 defconfig
 
 # Enable module / debug related configs
 # These are needed for loadable kernel modules and kernel debugging
-scripts/config --enable CONFIG_MODULES        # allow .ko modules to be loaded
-scripts/config --enable CONFIG_MODULE_UNLOAD  # allow modules to be unloaded (rmmod)
-scripts/config --enable CONFIG_DEBUG_INFO     # include DWARF debug symbols
-scripts/config --enable CONFIG_DEBUG_INFO_DWARF4  # use DWARF4 format (gdb-compatible)
-scripts/config --enable CONFIG_KALLSYMS       # embed kernel symbol table in the image
-scripts/config --enable CONFIG_KALLSYMS_ALL   # include all symbols (not just exported ones)
+scripts/config --enable CONFIG_MODULES
+scripts/config --enable CONFIG_MODULE_UNLOAD
+scripts/config --enable CONFIG_DEBUG_INFO
+scripts/config --enable CONFIG_DEBUG_INFO_DWARF4
+scripts/config --enable CONFIG_KALLSYMS
+scripts/config --enable CONFIG_KALLSYMS_ALL
 
 # Optional: open a menu-based config editor to browse/tweak settings
 # make ARCH=arm64 menuconfig
 
 # Build the kernel image (this takes a while)
 make ARCH=arm64 -j$(nproc) Image
+
+# Prepare the kernel build tree for out-of-tree module compilation
+# This generates the headers and scripts that `make modules` needs
+make ARCH=arm64 modules_prepare
 ```
 
 **What is `defconfig`?** It applies a known-good set of defaults for ARM64. `menuconfig` lets you interactively browse the thousands of kernel config options.
@@ -202,6 +206,8 @@ qemu-system-aarch64 \
   -device virtio-net-pci,netdev=net0 \
   -fsdev local,security_model=passthrough,id=fsdev0,path=$HOME/arm-vm/shared \
   -device virtio-9p-pci,id=fs0,fsdev=fsdev0,mount_tag=hostshare \
+  -fsdev local,security_model=passthrough,id=fsdev1,path=$HOME/arm-vm/linux-5.15 \
+  -device virtio-9p-pci,id=fs1,fsdev=fsdev1,mount_tag=kernelsrc \
   -nographic
 ```
 
@@ -216,7 +222,8 @@ qemu-system-aarch64 \
 | `-append` | Kernel command line arguments (see below) |
 | `-drive` | Attach the Ubuntu raw disk image |
 | `-netdev` / `-device virtio-net-pci` | NAT network, forwards host port 2222 to VM port 22 |
-| `-fsdev` / `-device virtio-9p-pci` | Share `~/arm-vm/shared` into the VM via VirtFS |
+| `-fsdev0` / `-device virtio-9p-pci` (hostshare) | Share `~/arm-vm/shared` into the VM via VirtFS |
+| `-fsdev1` / `-device virtio-9p-pci` (kernelsrc) | Share `~/arm-vm/linux-5.15` kernel source into the VM for in-VM module builds |
 | `-nographic` | No GUI window; use serial console in this terminal |
 
 **Kernel command line explained:**
@@ -236,19 +243,25 @@ You'll see the kernel boot log scroll by in your terminal. This is the serial co
 
 > **To exit the VM later:** type `poweroff` inside the VM, or press `Ctrl-A X` in the QEMU terminal to force-quit.
 
-### Mounting the Shared Folder Inside the VM
+### Mounting the Shared Folders Inside the VM
 
-The shared folder (`~/arm-vm/shared` on your host) is exposed to the VM via VirtFS (9p). Mount it once after booting:
+Both VirtFS shares are exposed to the VM via 9p. Mount them once after booting:
 
 ```bash
+# shared folder (your module source lives here)
 mkdir -p /mnt/host
 mount -t 9p -o trans=virtio hostshare /mnt/host
+
+# kernel source tree (needed to build modules inside the VM)
+mkdir -p /mnt/kernel
+mount -t 9p -o trans=virtio kernelsrc /mnt/kernel
 ```
 
-To mount it automatically on every boot, add this line to `/etc/fstab` inside the VM:
+To mount both automatically on every boot, add these lines to `/etc/fstab` inside the VM:
 
 ```
-hostshare  /mnt/host  9p  trans=virtio,version=9p2000.L,rw  0  0
+hostshare  /mnt/host    9p  trans=virtio,version=9p2000.L,rw  0  0
+kernelsrc  /mnt/kernel  9p  trans=virtio,version=9p2000.L,rw  0  0
 ```
 ---
 
@@ -328,13 +341,13 @@ You now have a full shell inside a VM running your self-compiled kernel.
 
 A **kernel module** (`.ko` file) is a piece of code that can be dynamically loaded into and unloaded from a running kernel without rebooting. This is how device drivers, filesystems, and (in security research) rootkits work.
 
-On the host, create the module directory:
+### Why you can't use `apt install linux-headers` here
 
-```bash
-mkdir -p ~/arm-vm/mymodule && cd ~/arm-vm/mymodule
-```
+Distro kernels ship a matching `linux-headers-*` package that provides the build tree at `/lib/modules/$(uname -r)/build`. Since we compiled our own kernel, no such package exists — we need to point the build system directly at our kernel source tree instead. That's what the `kernelsrc` VirtFS share is for.
 
-Create `mymodule.c`:
+### Write your module on the host
+
+Place your module source in `~/arm-vm/shared/` so it's accessible inside the VM at `/mnt/host/`. Create `mymodule/mymodule.c`:
 
 ```c
 #include <linux/init.h>    // for __init / __exit macros
@@ -359,43 +372,36 @@ module_exit(mymodule_exit);  // register the cleanup function
 
 **`printk` vs `printf`:** In kernel space there is no standard C library. `printk` writes to the kernel ring buffer, which you read with `dmesg`. `KERN_INFO` is the log severity level (also: `KERN_ERR`, `KERN_WARNING`, `KERN_DEBUG`).
 
-Create `Makefile`:
+Create `mymodule/Makefile`:
 
 ```makefile
 obj-m += mymodule.o
+KDIR ?= /mnt/kernel
 
 all:
-	make ARCH=arm64 -C ~/arm-vm/linux-5.15 M=$(PWD) modules
+	make ARCH=arm64 -C $(KDIR) M=$(PWD) modules
 
 clean:
-	make ARCH=arm64 -C ~/arm-vm/linux-5.15 M=$(PWD) clean
+	make ARCH=arm64 -C $(KDIR) M=$(PWD) clean
 ```
 
-`obj-m` tells the kernel build system to build `mymodule.c` as a loadable module (not built into the kernel image). `-C` points to the kernel source tree; `M=$(PWD)` tells it where your module source lives.
+`obj-m` tells the kernel build system to build `mymodule.c` as a loadable module (not built into the kernel image). `KDIR` points at the kernel source tree mounted from the host; `M=$(PWD)` tells it where your module source lives.
 
-Build (run this on your host, not inside the VM):
+### Build and load inside the VM
+
+SSH into the VM and run:
 
 ```bash
+cd /mnt/host/mymodule
 make
-```
-
-This produces `mymodule.ko` — the compiled module binary.
-
-Copy the `.ko` into the VM over SSH:
-
-```bash
-scp -P 2222 mymodule.ko root@localhost:~
-```
-
-Inside the VM, load and test it:
-
-```bash
 insmod mymodule.ko      # insert module into the running kernel
 dmesg | tail            # check kernel log — should show "mymodule: loaded"
 lsmod | grep mymodule   # list loaded modules — confirms it's active
 rmmod mymodule          # unload the module
 dmesg | tail            # should now show "mymodule: unloaded"
 ```
+
+This produces `mymodule.ko` in the same directory. No `scp` needed — the file is immediately on the host too via the shared folder.
 
 **Common errors:**
 | Error | Cause |
@@ -407,18 +413,6 @@ dmesg | tail            # should now show "mymodule: unloaded"
 ---
 
 ## Troubleshooting
-
-**VM won't boot / kernel panic:**
-- Make sure the kernel `Image` path in `start-vm.sh` is correct
-- Check that the `.qcow2` file downloaded completely (`ls -lh` to verify size ~300 MB)
-
-**`make` fails when building the module:**
-- Make sure you ran `make ARCH=arm64 defconfig` and the full kernel build inside the container first
-- The module build needs the kernel's compiled headers and `Module.symvers` to exist
-
-**SSH connection refused:**
-- Make sure you ran `systemctl start ssh` inside the VM
-- Confirm the VM is still running (check the QEMU serial console terminal)
 
 **No network / `dhclient` fails:**
 
@@ -442,15 +436,15 @@ Then verify with `ip addr show enp0s1` — you should see an assigned IP. If the
 ```
 ~/arm-vm/
 ├── Dockerfile.builder                       # Docker image for kernel compilation
-├── linux-5.15/                              # kernel source + build artifacts
+├── linux-5.15/                              # kernel source + build artifacts (mounted at /mnt/kernel inside VM)
 │   └── arch/arm64/boot/Image               # compiled kernel image
 ├── ubuntu-20.04-server-cloudimg-arm64-root.tar.xz  # downloaded rootfs tarball
 ├── cloud.img                                # VM disk image (rootfs, raw format)
 ├── start-vm.sh                              # QEMU launch script
-├── shared/                                  # host↔VM shared folder (mounted at /mnt/host inside VM)
-└── mymodule/                                # your kernel module
-    ├── mymodule.c
-    └── Makefile
+└── shared/                                  # host↔VM shared folder (mounted at /mnt/host inside VM)
+    └── mymodule/                            # your kernel module — edit on host, build inside VM
+        ├── mymodule.c
+        └── Makefile
 ```
 
 ---
