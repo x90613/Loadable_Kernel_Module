@@ -20,8 +20,6 @@ This guide sets up a kernel v5.15 development environment on Apple Silicon Mac u
 
 ## Step 1 — Install UTM and Create a VM
 
-> You can refer to this video for a visual walkthrough: [Setup UTM virtual machine](https://www.youtube.com/watch?si=8sCKZ3IdABCXUa-v&v=O19mv1pe76M&feature=youtu.be)
-
 1. Download and install UTM from [utm.app](https://mac.getutm.app/)
 2. Open UTM → click **+** → **Virtualize**
 3. Select **Linux**
