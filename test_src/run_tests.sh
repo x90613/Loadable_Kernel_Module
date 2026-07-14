@@ -11,9 +11,10 @@ DEV=/dev/loadable_kernel_module
 MOD=loadable_kernel_module
 PASS=0
 FAIL=0
+FAILED_CASES=()
 
 pass() { echo "[PASS] $1"; PASS=$((PASS + 1)); }
-fail() { echo "[FAIL] $1"; FAIL=$((FAIL + 1)); }
+fail() { echo "[FAIL] $1"; FAIL=$((FAIL + 1)); FAILED_CASES+=("$1"); }
 
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -175,4 +176,10 @@ echo ""
 
 # --- Summary ---
 echo "=== Results: $PASS passed, $FAIL failed ==="
-[ $FAIL -eq 0 ] && exit 0 || exit 1
+if [ $FAIL -ne 0 ]; then
+    echo "Failed cases:"
+    for case in "${FAILED_CASES[@]}"; do
+        echo "  - $case"
+    done
+    exit 1
+fi
