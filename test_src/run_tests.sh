@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
 DEV=/dev/loadable_kernel_module
 MOD=loadable_kernel_module
 PASS=0
@@ -23,9 +25,9 @@ require_root() {
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
-    pkill -f "out/hsuckd" 2>/dev/null || true
-    pkill -f "out/NTUST"  2>/dev/null || true
-    pkill -f "out/MIT"    2>/dev/null || true
+    pkill -f "$REPO_ROOT/out/hsuckd" 2>/dev/null || true
+    pkill -f "$REPO_ROOT/out/NTUST"  2>/dev/null || true
+    pkill -f "$REPO_ROOT/out/MIT"    2>/dev/null || true
 
     # Restore syscall table before rmmod if hooks were installed
     # (rmmod triggers lkm_exit which restores originals)
@@ -47,7 +49,7 @@ echo ""
 echo "--- Setup ---"
 
 if ! lsmod | grep -q "^$MOD "; then
-    insmod ${MOD}.ko
+    insmod $REPO_ROOT/${MOD}.ko
 fi
 
 MAJOR=$(dmesg | grep "major number for your device" | tail -1 | grep -o '[0-9]*$')
@@ -69,7 +71,7 @@ echo "--- Test 0: module hide / unhide ---"
 lsmod | grep -q "^$MOD " && pass "module visible in lsmod before hide" \
                            || fail "module not visible in lsmod before hide"
 
-./out/userTest 0
+$REPO_ROOT/out/userTest 0
 
 if lsmod | grep -q "^$MOD "; then
     fail "module still visible after hide"
@@ -77,7 +79,7 @@ else
     pass "module hidden from lsmod"
 fi
 
-./out/userTest 0
+$REPO_ROOT/out/userTest 0
 
 lsmod | grep -q "^$MOD " && pass "module visible again after unhide" \
                            || fail "module not visible after unhide"
@@ -87,9 +89,9 @@ echo ""
 # --- Test 1: IOCTL_MOD_MASQ (process name masquerade) ---
 echo "--- Test 1: process masquerade ---"
 
-./out/NTUST &
+$REPO_ROOT/out/NTUST &
 NTUST_PID=$!
-./out/MIT &
+$REPO_ROOT/out/MIT &
 MIT_PID=$!
 
 # Wait until both processes appear in the task list
@@ -106,7 +108,7 @@ ps -p $MIT_PID -o comm= 2>/dev/null | grep -q "MIT" \
     && pass "MIT process visible before masq" \
     || fail "MIT process not found before masq"
 
-./out/userTest 1
+$REPO_ROOT/out/userTest 1
 
 # NTUST → NTU (shorter: should succeed)
 ps -p $NTUST_PID -o comm= 2>/dev/null | grep -q "NTU" \
@@ -126,11 +128,11 @@ echo ""
 # --- Test 2: IOCTL_MOD_HOOK (syscall hooks) ---
 echo "--- Test 2: syscall hooks ---"
 
-./out/hsuckd &
+$REPO_ROOT/out/hsuckd &
 HSUCKD_PID=$!
 sleep 0.2
 
-./out/userTest 2
+$REPO_ROOT/out/userTest 2
 
 # kill -9 should be intercepted — process survives
 kill -9 $HSUCKD_PID 2>/dev/null || true
@@ -157,13 +159,13 @@ echo ""
 # --- Test 3: IOCTL_FILE_HIDE (hide file from ls) ---
 echo "--- Test 3: file hide ---"
 
-ls | grep -q "HiddenFile" \
+ls $REPO_ROOT | grep -q "HiddenFile" \
     && pass "HiddenFile visible before hide" \
     || fail "HiddenFile not found before hide (check working directory)"
 
-./out/userTest 3
+$REPO_ROOT/out/userTest 3
 
-if ls | grep -q "HiddenFile"; then
+if ls $REPO_ROOT | grep -q "HiddenFile"; then
     fail "HiddenFile still visible after hide"
 else
     pass "HiddenFile hidden from ls"
