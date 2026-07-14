@@ -1,4 +1,4 @@
-# ARM64 VM Setup — UTM Version (Kernel v5.15 Development Environment)
+# ARM64 VM Setup — UTM Version (Kernel v5.15 / v6.18 Development Environment)
 
 This guide sets up a kernel v5.15 development environment on Apple Silicon Mac using UTM. Compared to the QEMU/Docker approach, this is simpler: UTM manages the VM, and we compile the kernel directly inside the VM — no cross-compilation, no glibc mismatch, no VirtFS workarounds.
 
@@ -56,8 +56,15 @@ sudo apt-get install -y \
 
 ## Step 3 — Download Kernel Source
 
+Choose the kernel version you want to build against:
+
 ```bash
+# v5.15 (stable, original target)
 git clone --depth 1 --branch v5.15 https://github.com/torvalds/linux.git
+
+# v6.18 (latest, required for livepatch feature)
+git clone --depth 1 --branch v6.18 https://github.com/torvalds/linux.git
+
 cd linux
 ```
 
@@ -75,13 +82,37 @@ cd ~/linux
 # Start with the default ARM64 config
 make ARCH=arm64 defconfig
 
-# Enable module / debug related configs
+# Module support (required)
 scripts/config --enable CONFIG_MODULES
 scripts/config --enable CONFIG_MODULE_UNLOAD
-scripts/config --enable CONFIG_DEBUG_INFO
-scripts/config --enable CONFIG_DEBUG_INFO_DWARF4
+scripts/config --enable CONFIG_SYSFS
 scripts/config --enable CONFIG_KALLSYMS
 scripts/config --enable CONFIG_KALLSYMS_ALL
+scripts/config --disable CONFIG_TRIM_UNUSED_KSYMS
+
+# Kprobes — required for resolving unexported kernel symbols at runtime
+# Without this, the module cannot locate kallsyms_lookup_name and will fail to load
+scripts/config --enable CONFIG_KPROBES
+scripts/config --enable CONFIG_KPROBE_EVENTS
+scripts/config --enable CONFIG_HAVE_KPROBES
+scripts/config --enable CONFIG_KPROBES_ON_FTRACE
+
+# Ftrace — underlying mechanism used by livepatch to intercept function calls
+scripts/config --enable CONFIG_FTRACE
+scripts/config --enable CONFIG_FUNCTION_TRACER
+scripts/config --enable CONFIG_DYNAMIC_FTRACE
+scripts/config --enable CONFIG_DYNAMIC_FTRACE_WITH_ARGS
+
+# Livepatch
+scripts/config --enable CONFIG_LIVEPATCH
+scripts/config --enable CONFIG_SAMPLE_LIVEPATCH
+
+# Debug info (useful for symbol tracing and cross-referencing)
+scripts/config --enable CONFIG_DEBUG_INFO
+scripts/config --enable CONFIG_DEBUG_INFO_DWARF4
+
+# Resolve all config dependencies
+make ARCH=arm64 olddefconfig
 
 # Build the kernel image
 make ARCH=arm64 -j$(nproc)
