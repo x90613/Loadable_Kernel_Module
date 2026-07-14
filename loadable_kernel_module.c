@@ -16,6 +16,11 @@
 
 #include "loadable_kernel_module.h"
 
+// PROC_ROOT_INO was renamed to PROCFS_ROOT_INO in kernel 6.18.
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+#define PROC_ROOT_INO PROCFS_ROOT_INO
+#endif
+
 // kprobe for kallsyms_lookup_name
 #include <linux/kprobes.h>
 static struct kprobe kp = {
