@@ -429,12 +429,12 @@ static int __init lkm_init(void)
 
 	major = MAJOR(lkm_dev_no);
 	dev = MKDEV(major, 0);
-	printk("The major number for your device is %d\n", major);
+	pr_info("The major number for your device is %d\n", major);
 
 	/* Register a device structure with the kernel VFS*/
 	ret = cdev_add(kernel_cdev, dev, 1);
 	if (ret < 0) {
-		pr_info(KERN_INFO "unable to allocate cdev");
+		pr_info("unable to allocate cdev\n");
 		cdev_del(kernel_cdev);
 		unregister_chrdev_region(lkm_dev_no, 1);
 		return ret;
