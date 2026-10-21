@@ -279,13 +279,13 @@ static int hook(void)
 
 static int lkm_open(struct inode *inode, struct file *filp)
 {
-	pr_info("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	return 0;
 }
 
 static int lkm_release(struct inode *inode, struct file *filp)
 {
-	pr_info("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	return 0;
 }
 
@@ -366,7 +366,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 	default:
 		ret = -EINVAL;
 	}
-	pr_info("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	return ret;
 }
 
