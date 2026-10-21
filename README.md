@@ -139,7 +139,7 @@ kill -9 <pid>               # intercepted — process survives
 kill -10 <pid>              # passes through
 ```
 
-**getdents64** — filters directory entries. Used by `ls`, `readdir`, `/proc` lookups. After the real syscall runs, entries matching the hidden filename or an invisible PID are spliced out of the result buffer.
+**getdents64** — filters directory entries. Used by `ls`, `readdir`, `/proc` lookups. After the real syscall runs, entries matching the hidden filename (outside `/proc`) are spliced out of the result buffer.
 
 ### Hide a File
 
@@ -275,7 +275,7 @@ static asmlinkage int hacked_kill(const struct pt_regs *pt_regs)
 }
 ```
 
-**getdents64** — runs the real syscall, then splices hidden entries out of the kernel-side copy of the result buffer before writing it back to userspace. Entries are hidden if the filename matches `HIDDEN_FILE`, or (when reading `/proc`) if the PID has `PF_INVISIBLE` set in `task->flags`.
+**getdents64** — runs the real syscall, then splices hidden entries out of the kernel-side copy of the result buffer before writing it back to userspace. Entries are hidden if they're outside `/proc` and the filename matches `hidden_file`.
 
 ---
 
