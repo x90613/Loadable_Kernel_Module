@@ -372,7 +372,7 @@ static long lkm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 }
 
 /* File operations structure */
-static struct file_operations fops = {
+static const struct file_operations fops = {
 	.open = lkm_open,
 	.unlocked_ioctl = lkm_ioctl,
 	.release = lkm_release,
