@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/dirent.h>
